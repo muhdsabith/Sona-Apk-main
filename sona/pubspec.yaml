@@ -1,0 +1,32 @@
+name: sona
+description: Raaga music player with local audio, Internet Archive search, and public Spotify playlist import.
+publish_to: none
+version: 4.8.1+21
+environment:
+  sdk: '>=3.9.0 <4.0.0'
+  flutter: '>=3.38.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  audio_service: ^0.18.18
+  file_picker: 10.3.10
+  path_provider: ^2.1.5
+  xml: ^6.6.1
+  just_audio: ^0.10.6
+  audio_session: ^0.2.4
+  shared_preferences: ^2.5.5
+  http: ^1.6.0
+  crypto: ^3.0.6
+  receive_sharing_intent: ^1.9.0
+  youtube_explode_dart: ^3.1.0
+  youtube_player_iframe: ^6.0.2
+  url_launcher: ^6.3.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - branding/raaga-icon.png
+    - LICENSE

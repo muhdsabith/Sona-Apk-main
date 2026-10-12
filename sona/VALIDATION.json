@@ -1,0 +1,20 @@
+{
+  "version": "4.8.1+21",
+  "verified": [
+    "Flutter 3.47.6 dependency resolution",
+    "Flutter analyze: no compilation errors; existing style and unused-code findings remain",
+    "flutter test: 22 tests passed"
+  ],
+  "not_verified": [
+    "Android APK build: GitHub upload denied by integration (HTTP 403), so no CI build was started",
+    "Playback on the user phone",
+    "Embedded player on Android WebView"
+  ],
+  "changes": [
+    "Removed the preflight audio GET so one-use YouTube URLs are consumed by the player only",
+    "Use androidSdkless extraction with a 15-second deadline and a 25-second total audio-load deadline",
+    "Added visible in-app YouTube fallback with queue controls and app-origin identity",
+    "Regenerated stale dependency lockfile; version 4.8.1+21"
+  ],
+  "live_check": "The resolver returned a stream URL, but this environment received a 195-byte text/html Site Unavailable response from the media host. This is not a successful audio playback test."
+}

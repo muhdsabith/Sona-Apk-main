@@ -1,0 +1,162 @@
+name: Build Raaga APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Get project files
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER="$(command -v sdkmanager || true)"
+
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found"
+            exit 1
+          fi
+          echo "Using $SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          # Newer sdkmanager versions can see newer platforms
+          "$SDKMANAGER" "cmdline-tools;latest" || true
+
+          echo "Platforms available:"
+          "$SDKMANAGER" --list 2>/dev/null | grep -E 'platforms;android-(3[6-9]|4)' || true
+
+          COMPILE_SDK=""
+          for PKG in "platforms;android-37.0" "platforms;android-37" "platforms;android-36"; do
+            if "$SDKMANAGER" "$PKG"; then
+              COMPILE_SDK="${PKG#platforms;android-}"
+              break
+            fi
+          done
+
+          if [ -z "$COMPILE_SDK" ]; then
+            echo "Could not install any Android platform"
+            exit 1
+          fi
+
+          "$SDKMANAGER" "build-tools;36.0.0" || true
+
+          echo "Using compileSdk $COMPILE_SDK"
+          echo "COMPILE_SDK=$COMPILE_SDK" >> "$GITHUB_ENV"
+
+      - name: Extract the starter
+        run: |
+          test -f sona-flutter-starter.zip || { echo 'Upload sona-flutter-starter.zip to the repository root first.'; exit 1; }
+          rm -rf app-source
+          unzip -q sona-flutter-starter.zip -d app-source
+
+      - name: Generate Android project without losing Raaga configuration
+        working-directory: app-source/sona
+        run: |
+          cp android/app/src/main/AndroidManifest.xml /tmp/raaga-AndroidManifest.xml
+          cp -r android/app/src/main/res /tmp/raaga-res
+
+          flutter create --empty --platforms=android --project-name=sona --org=com.example --no-pub .
+
+          cp /tmp/raaga-AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          # Merge Raaga resources on top of the generated ones (keeps styles.xml with LaunchTheme/NormalTheme)
+          cp -r /tmp/raaga-res/. android/app/src/main/res/
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          csdk = os.environ.get('COMPILE_SDK', '36')
+          csdk_num = csdk.split('.')[0] if csdk.endswith('.0') else csdk
+
+          for file_name in ['android/app/build.gradle.kts', 'android/app/build.gradle']:
+              path = Path(file_name)
+              if not path.exists():
+                  continue
+
+              text = path.read_text()
+
+              text = re.sub(
+                  r'compileSdk\s*=\s*flutter\.compileSdkVersion',
+                  f'compileSdk = {csdk_num}',
+                  text,
+              )
+              text = re.sub(
+                  r'compileSdkVersion\s+flutter\.compileSdkVersion',
+                  f'compileSdkVersion {csdk_num}',
+                  text,
+              )
+              text = re.sub(
+                  r'compileSdk\s+flutter\.compileSdkVersion',
+                  f'compileSdk {csdk_num}',
+                  text,
+              )
+
+              text = text.replace('minSdk = flutter.minSdkVersion', 'minSdk = 24')
+              text = text.replace('minSdkVersion flutter.minSdkVersion', 'minSdkVersion 24')
+              text = text.replace('minSdk flutter.minSdkVersion', 'minSdk 24')
+
+              path.write_text(text)
+          PY
+
+          echo 'Android SDK configuration:'
+          grep -nE 'compileSdk|minSdk|targetSdk' android/app/build.gradle.kts 2>/dev/null || true
+          grep -nE 'compileSdk|minSdk|targetSdk' android/app/build.gradle 2>/dev/null || true
+          echo 'Resource files:'
+          find android/app/src/main/res -type f | sort
+
+      - name: Install dependencies
+        working-directory: app-source/sona
+        run: flutter pub get
+
+      - name: Check Dart code
+        working-directory: app-source/sona
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Run tests
+        working-directory: app-source/sona
+        run: flutter test
+
+      - name: Build an installable test APK
+        working-directory: app-source/sona
+        run: |
+          set -o pipefail
+          flutter build apk --debug 2>&1 | tee build.log
+
+      - name: Show the build error
+        if: failure()
+        working-directory: app-source/sona
+        run: |
+          echo "===== WHAT WENT WRONG ====="
+          grep -n -A 12 "What went wrong" build.log || tail -n 40 build.log
+
+      - name: Save APK for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Raaga-Android-APK
+          path: app-source/sona/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
